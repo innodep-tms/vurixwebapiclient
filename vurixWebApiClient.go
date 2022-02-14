@@ -65,6 +65,7 @@ func NewVurixWebApiClient(opt OptVurixWebApiClient) *VurixWebApiClient {
 
 func (vc *VurixWebApiClient) SetLogger(logger Logger) {
 	vc.logger = logger
+	vc.client.SetLogger(logger)
 }
 
 
