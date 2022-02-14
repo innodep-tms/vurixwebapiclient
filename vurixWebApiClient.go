@@ -9,7 +9,6 @@ import (
 	"github.com/go-resty/resty/v2"
 	"github.com/parjom/goutil"
 	"github.com/spf13/cast"
-	"go.uber.org/zap"
 )
 
 type EventCallbackFunc func(interface{})
@@ -32,10 +31,10 @@ type VurixWebApiClient struct {
 	isRetryLogin       bool                 // 로그인 리트라이를 할지 저장하는 변수
 	isLogin            bool                 // 현재 로그인 상태인지 저장하는 변수
 	loginInfo          LoginInfo            // 로그인 완료 상태라면, 로그인 정보를 담고 있는 변수
-	logger             *zap.SugaredLogger   // 로그 객체 정보
+	logger             Logger              // 로그 객체 정보
 	ctx                context.Context      //
 	cancel             context.CancelFunc   //
-	eventReceiveClient VurixEventReceiver   // 이벤트 수신 객체
+	eventReceiveClient *VurixEventReceiver  // 이벤트 수신 객체
 	eventCallback      EventCallbackFunc    // 이벤트 수신 콜백
 }
 
@@ -45,10 +44,9 @@ func (vc *VurixWebApiClient) GetToken() (token string, apiserial int) {
 	return
 }
 
-func NewVurixWebApiClient(opt OptVurixWebApiClient, logger *zap.SugaredLogger) *VurixWebApiClient {
-	if logger == nil {
-		logger = zap.S()
-	}
+func NewVurixWebApiClient(opt OptVurixWebApiClient) *VurixWebApiClient {
+
+	logger := createLogger()
 	vc := VurixWebApiClient{
 		client:    resty.New(),
 		opt:       opt,
@@ -60,10 +58,18 @@ func NewVurixWebApiClient(opt OptVurixWebApiClient, logger *zap.SugaredLogger) *
 
 	// 고루틴을 종료하기 위한 Cancel 객체 생성
 	vc.ctx, vc.cancel = context.WithCancel(context.Background())
-
-	vc.client.SetDebug(true)
+	vc.client.SetLogger(logger)
 
 	return &vc
+}
+
+func (vc *VurixWebApiClient) SetLogger(logger Logger) {
+	vc.logger = logger
+}
+
+
+func (vc *VurixWebApiClient) SetDebug(debug bool) {
+	vc.client.SetDebug(debug)
 }
 
 func (vc *VurixWebApiClient) Login() {
@@ -77,6 +83,10 @@ func (vc *VurixWebApiClient) Login() {
 func (vc *VurixWebApiClient) Logout() {
 	vc.isRetryLogin = false
 	vc.isLogin = false
+	if vc.eventReceiveClient != nil {
+		vc.eventReceiveClient.Stop()
+		vc.eventReceiveClient = nil
+	}
 	vc.cancel() // 모든 루프가 종료될 수 있도록, Sleep을 Cancel한다.
 	// 응답여부에 관계없이 로그아웃 요청을 보낸다.
 	vc.client.R().
@@ -95,24 +105,30 @@ func (vc *VurixWebApiClient) loginAction() {
 		Get(vc.webApiURL + "/api/login")
 
 	if err == nil {
-		var bodyJson interface{}
-		body := resp.Body()
-		err := json.Unmarshal(body, &bodyJson)
-		if err == nil {
-			vc.loginInfo.AuthToken = cast.ToString(goutil.JsonGetValue(bodyJson, "results.auth_token"))
-			vc.loginInfo.ApiSerial = cast.ToInt(goutil.JsonGetValue(bodyJson, "results.api_serial"))
-			vc.loginInfo.VmsID = cast.ToInt(goutil.JsonGetValue(bodyJson, "results.vms_id"))
-			vc.loginInfo.GrpSerial = cast.ToInt(goutil.JsonGetValue(bodyJson, "results.grp_serial"))
-			vc.loginInfo.UserSerial = cast.ToInt(goutil.JsonGetValue(bodyJson, "results.user_serial"))
-			vc.loginInfo.UserID = cast.ToString(goutil.JsonGetValue(bodyJson, "results.user_id"))
-			vc.loginInfo.UserName = cast.ToString(goutil.JsonGetValue(bodyJson, "results.user_name"))
-			vc.loginInfo.Utc = cast.ToBool(goutil.JsonGetValue(bodyJson, "results.utc"))
-			vc.isLogin = true
-			// KeepAlive를 10분에 한번씩 전송하는 루프 동작
-			go vc.sendKeepAliveLoop(600 * time.Second)
+		if resp.StatusCode() == 200 {
+			var bodyJson interface{}
+			body := resp.Body()
+			err := json.Unmarshal(body, &bodyJson)
+			if err == nil {
+				vc.loginInfo.AuthToken = cast.ToString(goutil.JsonGetValue(bodyJson, "results.auth_token"))
+				vc.loginInfo.ApiSerial = cast.ToInt(goutil.JsonGetValue(bodyJson, "results.api_serial"))
+				vc.loginInfo.VmsID = cast.ToInt(goutil.JsonGetValue(bodyJson, "results.vms_id"))
+				vc.loginInfo.GrpSerial = cast.ToInt(goutil.JsonGetValue(bodyJson, "results.grp_serial"))
+				vc.loginInfo.UserSerial = cast.ToInt(goutil.JsonGetValue(bodyJson, "results.user_serial"))
+				vc.loginInfo.UserID = cast.ToString(goutil.JsonGetValue(bodyJson, "results.user_id"))
+				vc.loginInfo.UserName = cast.ToString(goutil.JsonGetValue(bodyJson, "results.user_name"))
+				vc.loginInfo.Utc = cast.ToBool(goutil.JsonGetValue(bodyJson, "results.utc"))
+				vc.isLogin = true
+				// KeepAlive를 10분에 한번씩 전송하는 루프 동작
+				go vc.sendKeepAliveLoop(600 * time.Second)
+			} else {
+				vc.isLogin = false
+			}
 		} else {
 			vc.isLogin = false
 		}
+	} else {
+		vc.isLogin = false
 	}
 }
 
@@ -171,8 +187,13 @@ func (vc *VurixWebApiClient) SleepWithContext(d time.Duration) {
 	}
 }
 
-func (vc *VurixWebApiClient) SetEventHandler(callback func(interface{}), opt OptVurixEventReceiver) {
+func (vc *VurixWebApiClient) SetEventHandler(callback EventCallbackFunc, opt OptVurixEventReceiver) {
 	vc.eventCallback = callback
-
-
+	if vc.eventReceiveClient != nil {
+		vc.eventReceiveClient.Stop()
+		vc.eventReceiveClient = nil
+	}
+	vc.eventReceiveClient = NewVurixEventReceiver(opt)
+	vc.eventReceiveClient.SetVurixWebApiClient(vc)
+	vc.eventReceiveClient.Run(vc.logger)
 }
