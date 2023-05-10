@@ -8,10 +8,10 @@ import (
 
 	"go.uber.org/zap"
 )
-
+//","8080","group1","admin","admin","licNormalClient"
 func TestVurixWebClient(t *testing.T) {
 	opt := NewOptVurixWebApiClient()
-	opt.Host = "172.16.31.202"
+	opt.Host = "10.10.91.126"
 	opt.Port = 8080
 	opt.User = "admin"
 	opt.Pass = "admin"
@@ -32,7 +32,7 @@ func TestVurixWebClient(t *testing.T) {
 	}
 	vc.SetEventHandler(CallbackFunc, optVER)
 
-	time.Sleep(60 * time.Second)
+	time.Sleep(600 * time.Second)
 	vc.Logout()
 
 	time.Sleep(1 * time.Second)

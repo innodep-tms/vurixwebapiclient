@@ -94,24 +94,30 @@ func (mp *MultiPartParser) Parse(data []byte, size int) (msg []byte, err error) 
 		pos := bytes.Index(mp.buff, mp.boundary)
 		if pos >= 0 {
 			sPosHeader := pos + mp.boundarySize
-			ePosHeader := bytes.Index(mp.buff, crlfcrlf)
-			if ePosHeader > 0 {
-				headers := mp.parseHeader(mp.buff[sPosHeader:ePosHeader])
-				contentLength := cast.ToInt(headers["Content-Length"])
-				headerEndPos := ePosHeader + 4
-				bodyEndPos := headerEndPos + contentLength
-				if contentLength > 0 {
-					bodyEndPos += 4
+			ePosHeader := bytes.Index(mp.buff[sPosHeader:], crlfcrlf)
+			if ePosHeader >= 0 {
+				ePosHeader += sPosHeader
+				// headers := mp.parseHeader(mp.buff[sPosHeader:ePosHeader])
+				// Content-Length 사양을 제대로 지키지 않아서, 컨텐츠 길이를 무시하고 crlfcrlf가 나오거나, 다음 바운더리가 나올때까지를 Body로 본다
+				// contentLength := cast.ToInt(headers["Content-Length"])
+				sBodyPos := ePosHeader + 4
+
+				eBodyPos := bytes.Index(mp.buff[sBodyPos:], crlfcrlf)
+				dummysize := 4
+				if eBodyPos < 0{
+					// 혹시나 crlfcrlf 없이, 바로 --myevent 와 같은 바운더리가 나온다면
+					eBodyPos = bytes.Index(mp.buff[sBodyPos:], mp.boundary)
+					dummysize = 0
 				}
-				if bodyEndPos <= mp.buffSize {
+				if eBodyPos >= 0 {
+					eBodyPos += sBodyPos
 					// 메세지 파싱완료
-					msg = mp.buff[headerEndPos : headerEndPos+contentLength]
+					msg = mp.buff[sBodyPos : eBodyPos]
 					err = nil
-
+					eBodyPos += dummysize
 					// 파싱완료된 메모리 제거
-					mp.buff = mp.buff[bodyEndPos:]
-					mp.buffSize -= bodyEndPos
-
+					mp.buff = mp.buff[eBodyPos:]
+					mp.buffSize -= eBodyPos
 				} else {
 					// 데이터를 더 받아야 함
 					msg = nil

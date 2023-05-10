@@ -36,6 +36,7 @@ type VurixWebApiClient struct {
 	cancel             context.CancelFunc   //
 	eventReceiveClient *VurixEventReceiver  // 이벤트 수신 객체
 	eventCallback      EventCallbackFunc    // 이벤트 수신 콜백
+	isDebug            bool                 // 디버그 모드
 }
 
 func (vc *VurixWebApiClient) GetToken() (token string, apiserial int) {
@@ -70,7 +71,12 @@ func (vc *VurixWebApiClient) SetLogger(logger Logger) {
 
 
 func (vc *VurixWebApiClient) SetDebug(debug bool) {
+	vc.isDebug = debug
 	vc.client.SetDebug(debug)
+}
+
+func (vc *VurixWebApiClient) GetDebug() bool {
+	return vc.isDebug
 }
 
 func (vc *VurixWebApiClient) Login() {

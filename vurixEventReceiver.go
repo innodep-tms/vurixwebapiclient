@@ -89,9 +89,10 @@ func (ver *VurixEventReceiver) receviceEvent() {
 	sendData = append(sendData, []byte("x-auth-token: "+authToken+"\r\n")...)
 	sendData = append(sendData, []byte("x-api-serial: "+cast.ToString(apiSerial)+"\r\n")...)
 	sendData = append(sendData, []byte("\r\n")...)
-
-	ver.logger.Debugf("Send Data : \n%s", string(sendData))
 	ver.conn.Write(sendData)
+	if ver.vc.GetDebug() {
+		ver.logger.Debugf("Send Data : \n%s", string(sendData))
+	}
 
 	recv := make([]byte, 4096)
 	for {
@@ -99,6 +100,9 @@ func (ver *VurixEventReceiver) receviceEvent() {
 		if err != nil {
 			ver.logger.Warn("Failed to Read data : ", err)
 			break
+		}
+		if ver.vc.GetDebug() {
+			ver.logger.Debugf("Receive Data : %x", string(recv[0:n]))
 		}
 
 	PARSINGLABEL:
@@ -143,7 +147,9 @@ func (ver *VurixEventReceiver) SendMessage(msg []byte) {
 			ver.vc.eventCallback(jsonMsg)
 		}
 	} else {
-		ver.logger.Debugf("Discard Msg : %s", string(msg))
+		if ver.vc.GetDebug() {
+			ver.logger.Debugf("Discard Msg : %s", string(msg))
+		}
 	}
 }
 
