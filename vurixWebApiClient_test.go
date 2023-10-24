@@ -8,7 +8,8 @@ import (
 
 	"go.uber.org/zap"
 )
-//","8080","group1","admin","admin","licNormalClient"
+
+// ","8080","group1","admin","admin","licNormalClient"
 func TestVurixWebClient(t *testing.T) {
 	opt := NewOptVurixWebApiClient()
 	opt.Host = "10.10.91.126"
